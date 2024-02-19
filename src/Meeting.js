@@ -14,7 +14,9 @@ import { FileContext } from './FileContext';
 import { OpenAIClient } from '@azure/openai';
 import { AzureKeyCredential } from '@azure/core-auth';
 import { Link } from 'react-router-dom';
+import { getDocument, GlobalWorkerOptions, version } from 'pdfjs-dist';
 
+GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.js`;
 const endpoint = "https://kic-2024-openai.openai.azure.com/";
 const azureApiKey = "f8ac1f51bb7b42e096cb1d08a9e1666e";
 const deploymentId = "51e134d9-5b8c-44dd-be2e-9b15ee4b1f39";
@@ -181,7 +183,20 @@ function InputText(props) {    // 입력창
     setInputText('');
 
     const messages = [                        // 프롬프트
-      { role: "user", content: `${inputText}이 뭐야?` },
+      {
+        role: "user", content: `Given the following text of meeting minutes, please provide a concise summary that includes the main agenda items discussed, key decisions made, action items assigned, and any significant contributions from participants. Ensure the summary captures the essence of the meeting and is clear and straightforward for stakeholders who were not present at the meeting to understand.
+
+      [Insert Meeting Minutes Text Here]
+      
+      Ensure your summary includes:
+      1. The date and purpose of the meeting.
+      2. A list of the main agenda items discussed.
+      3. Key decisions made during the meeting.
+      4. Action items and the individuals responsible for each.
+      5. Significant contributions or remarks from participants, if any.
+      6. Any follow-up meetings or deadlines mentioned.
+      
+      Please present the summary in a structured format for easy reading and comprehension.` },
     ];
 
     console.log("== Post GPT API ==");
@@ -244,8 +259,8 @@ function InputText(props) {    // 입력창
 function FlowChat() { // flowchat button
   const [flowChat, setFlowChat] = useState(false);
   const [messages, setMessages] = useState([]);
-  const [industryValue, setIndustryValue] = useState(null);
-  const [industryInputValue, setIndustryInputValue] = useState(null);
+  const [industryValue, setIndustryValue] = useState('');
+  const [industryInputValue, setIndustryInputValue] = useState('');
   const [inputValue, setInputValue] = useState('');
 
   const handleClick = () => {
@@ -402,16 +417,12 @@ function FlowChat() { // flowchat button
 function Meeting() {
   const [isChat, setIsChat] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [fileText, setFileText] = useState('');
   const { files, setFiles } = useContext(FileContext);
 
   const handleChange = () => {
     setIsChat(!isChat);
   }
-
-  // 파일 업로드 (FileUpload)
-  const handleUpload = (file) => {
-    setFiles(prevFiles => [...prevFiles, file]);
-  };
 
   // 파일 목록 제거 (FileUpload)
   const handleRemoveFile = (fileList) => {
@@ -429,6 +440,100 @@ function Meeting() {
     setMessages((prevMessages) => [...prevMessages, newMessage]);
     setIsChat(true);
   };
+
+  // 파일 업로드
+  const handleUpload = (file) => {
+    if (file) {
+      const fileReader = new FileReader();
+
+      fileReader.onload = async function () {
+        const arrayBuffer = this.result;
+        const pdf = await getDocument(arrayBuffer).promise;
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const text = textContent.items.map(item => item.str).join(' ');
+
+          console.log('페이지', i, '텍스트:', text);
+          setFileText((prevText) => [...prevText, text]);
+        }
+
+        const messages = [                        // 프롬프트
+          {
+            role: "user", content: `Given the following text of meeting minutes, please provide a concise summary that includes the main agenda items discussed, key decisions made, action items assigned, and any significant contributions from participants. Ensure the summary captures the essence of the meeting and is clear and straightforward for stakeholders who were not present at the meeting to understand.
+
+          ${fileText}
+
+          Ensure your summary includes:
+          1. The date and purpose of the meeting.
+          2. A list of the main agenda items discussed.
+          3. Key decisions made during the meeting.
+          4. Action items and the individuals responsible for each.
+          5. Significant contributions or remarks from participants, if any.
+          6. Any follow-up meetings or deadlines mentioned.
+
+          Please present the summary in a structured format for easy reading and comprehension.` },
+        ];
+
+        console.log("== Post GPT API ==");
+
+        try {
+          const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
+          const result = await client.getChatCompletions(deploymentId, messages);
+
+          for (const choice of result.choices)
+            console.log(choice.message);
+        } catch (error) {
+          console.error('Failed to call API', error);
+        }
+      };
+
+      fileReader.readAsArrayBuffer(file);
+      setFiles(prevFiles => [...prevFiles, file]);
+    }
+  };
+
+  // 파일 업로드 (FileUpload)
+  // const handleUpload = (file) => {
+  //   const reader = new FileReader();
+
+  //   reader.onload = async (e) => {
+  //     const fileContent = e.target.result;
+
+  //     const messages = [                        // 프롬프트
+  //       {
+  //         role: "user", content: `Given the following text of meeting minutes, please provide a concise summary that includes the main agenda items discussed, key decisions made, action items assigned, and any significant contributions from participants. Ensure the summary captures the essence of the meeting and is clear and straightforward for stakeholders who were not present at the meeting to understand.
+
+  //         ${fileContent}
+
+  //         Ensure your summary includes:
+  //         1. The date and purpose of the meeting.
+  //         2. A list of the main agenda items discussed.
+  //         3. Key decisions made during the meeting.
+  //         4. Action items and the individuals responsible for each.
+  //         5. Significant contributions or remarks from participants, if any.
+  //         6. Any follow-up meetings or deadlines mentioned.
+
+  //         Please present the summary in a structured format for easy reading and comprehension.` },
+  //     ];
+
+  //     console.log("== Post GPT API ==");
+
+  //     try {
+  //       const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
+  //       const result = await client.getChatCompletions(deploymentId, messages);
+
+  //       for (const choice of result.choices)
+  //         console.log(choice.message);
+  //     } catch (error) {
+  //       console.error('Failed to call API', error);
+  //     }
+  //   };
+  //   reader.readAsText(file);
+
+  //   setFiles(prevFiles => [...prevFiles, file]);
+  // };
 
   return (
     <div className="Meeting">
