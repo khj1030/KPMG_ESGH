@@ -35,12 +35,17 @@ function Header() {   // 상단 부분
 }
 
 function Files() {
-    const { files, setFiles } = useContext(FileContext);
+    const { files, setFiles, filesContent, setFilesContent} = useContext(FileContext);
 
     const handleRemoveFile = (index) => {
+        // 파일 이름 목록 제거
         const newFileList = [...files];
         newFileList.splice(index, 1);
         setFiles(newFileList);
+        // 파일 내용 목록 제거
+        const newFileListContent = [...filesContent];
+        newFileListContent.splice(index, 1);
+        setFilesContent(newFileListContent);
     }
 
     return (
