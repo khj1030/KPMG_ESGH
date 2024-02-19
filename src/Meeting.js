@@ -66,9 +66,14 @@ function FileUpload(props) {   // 파일 업로드
   };
 
   const handleRemoveFile = (index) => {
+    // 파일 이름 목록 제거
     const newFileList = [...props.files];
     newFileList.splice(index, 1);
     props.onRemoveFile(newFileList);
+    // 파일 내용 목록 제거
+    const newFileContentList = [...props.filesContent];
+    newFileContentList.splice(index, 1);
+    props.onRemoveFileContent(newFileContentList);
   }
 
   return (
@@ -182,24 +187,30 @@ function InputText(props) {    // 입력창
     props.onSendMessage(newMessage);
     setInputText('');
 
-    const messages = [                        // 프롬프트
-      {
-        role: "user", content: `Given the following text of meeting minutes, please provide a concise summary that includes the main agenda items discussed, key decisions made, action items assigned, and any significant contributions from participants. Ensure the summary captures the essence of the meeting and is clear and straightforward for stakeholders who were not present at the meeting to understand.
+    const meetingMinutes = props.files.map(file => file[0].content).join("");
 
-      [Insert Meeting Minutes Text Here]
-      
-      Ensure your summary includes:
-      1. The date and purpose of the meeting.
-      2. A list of the main agenda items discussed.
-      3. Key decisions made during the meeting.
-      4. Action items and the individuals responsible for each.
-      5. Significant contributions or remarks from participants, if any.
-      6. Any follow-up meetings or deadlines mentioned.
-      
-      Please present the summary in a structured format for easy reading and comprehension.` },
+    const messages = [        // 요약본에서 물어보는 프롬프트
+      {
+        "role": "system",
+        "content": "안녕하세요. 이 서비스는 주어진 회의록의 제목, 중요한 사항들, 그리고 액션 아이템을 바탕으로 사용자의 질문에 답변합니다. 회의록에서 중요한 정보를 요약하여 제공하며, 사용자가 해당 회의록에 대해 가지고 있는 질문에 대해 구체적인 답변을 제공합니다. 회의록의 요약 정보를 먼저 입력해주세요."
+      },
+      {
+        "role": "system",
+        "content": `${meetingMinutes}`
+      },
+      {
+        "role": "user",
+        "content": `${inputText}`
+      },
+      {
+        "role": "system",
+        "content": "여기에는 사용자가 제공한 질문에 대한 답을 주어진 회의록을 바탕으로 성심성의껏 응답합니다."
+      }
     ];
 
     console.log("== Post GPT API ==");
+    console.log("요약본 모음 : ", meetingMinutes);
+    console.log("물어본 내용 : ", inputText);
 
     const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
     const result = await client.getChatCompletions(deploymentId, messages);
@@ -218,10 +229,6 @@ function InputText(props) {    // 입력창
   const handleUpload = ({ target }) => {
     const file = target.files[0];
     props.onUploadFile(file);
-  };
-
-  const fileButtonClick = () => {
-
   };
 
   return (
@@ -245,7 +252,7 @@ function InputText(props) {    // 입력창
             <Add />
           </label>
         </button>
-        <button className='list-button' onClick={fileButtonClick}>
+        <button className='list-button'>
           <Link to='/fileList'>
             <img src={copy} className="List" alt="list" width='70%' height='70%' />
           </Link>
@@ -257,8 +264,10 @@ function InputText(props) {    // 입력창
 }
 
 function FlowChat() { // flowchat button
+  const [isFirst, setIsFirst] = useState(true);
   const [flowChat, setFlowChat] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [isWord, setIsWord] = useState('');
   const [industryValue, setIndustryValue] = useState('');
   const [industryInputValue, setIndustryInputValue] = useState('');
   const [inputValue, setInputValue] = useState('');
@@ -266,8 +275,7 @@ function FlowChat() { // flowchat button
   const handleClick = () => {
     if (flowChat) {
       setFlowChat(false);
-      setMessages([]);
-    } else {
+    } else if (isFirst){
       const firstMessage = `안녕하세요.
       해석이 어려우신 문장이나 용어를 고객사 산업군과 함께 알려주시면
       제가 알기 쉽게 풀어드릴게요!`;
@@ -283,9 +291,15 @@ function FlowChat() { // flowchat button
         setFlowChat(true);
         return updatedMessages;
       });
+      setIsFirst(false);
+    } else {
+      setFlowChat(true);
     }
   };
 
+  const handleIsWordChange = (e) => {
+    setIsWord(e.target.value);
+  };
   const handleIndustryChange = (e) => {
     setIndustryValue(e.target.value);
   };
@@ -300,24 +314,26 @@ function FlowChat() { // flowchat button
     e.preventDefault();
     if (inputValue.trim() === '') return;
 
-    const inputText = `${(industryValue === '' ? industryInputValue : industryValue)}\n${inputValue}`;
+    const inputText = `${(industryValue === '' ? industryInputValue : industryValue)}
+    ${inputValue}`;
 
     const newMessage = {
       id: Date.now(),
       sender: "user",
+      industry: industryValue === '' ? industryInputValue : industryValue,
+      content: inputValue,
       text: inputText,
     };
 
     console.log('선택된 산업군:', newMessage.industry);
-    console.log('전송된 메시지:', newMessage.text);
+    console.log('전송된 메시지:', newMessage.content);
     setMessages((prevMessages) => [...prevMessages, newMessage]);
     setInputValue('');
 
-    const messages = [                        // 프롬프트
-      { role: "user", content: `${inputText}이 뭐야?` },
-    ];
+    const messages = generateMessage(isWord, newMessage.industry, newMessage.content);                    // 프롬프트
 
     console.log("== Post GPT API ==");
+    console.log('보낸 메세지',messages);
 
     const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
     const result = await client.getChatCompletions(deploymentId, messages);
@@ -333,6 +349,127 @@ function FlowChat() { // flowchat button
       setMessages((prevMessages) => [...prevMessages, newMessage]);
     }
   };
+
+  function generateMessage( word, industry, content){
+    let message;
+
+    if(word === '단어'){
+      message = [
+        {
+          "role": "system",
+          "content": "안녕하세요. 해석이 어려운 문장이나 용어를 입력하시면, 저희 챗봇이 알기 쉽게 풀어서 설명드립니다. 단어를 입력하실 경우 단어를 풀어서 설명드립니다. 특정 산업군에 관련된 용어나 문장을 입력하시면 더 정확한 답변을 드릴 수 있습니다. 시작해주세요!"
+        },
+        {
+          "role": "user",
+          "content": `${content}`
+        },
+        {
+          "role": "system",
+          "content": "여기에 사용자가 입력할 내용에 대한 예상 반응을 적어주세요. 예를 들어, '블록체인'이라는 단어에 대한 최대 1~2줄의 짧고 간결한 설명(블록체인: 블록체인은 분산 데이터 저장 기술로, 각 블록에 데이터를 기록하고 체인처럼 연결하여 데이터의 안전성과 무결성을 보장합니다. 주로 금융, 계약 등 다양한 분야에서 활용됩니다.)을 제공합니다."
+        }
+      ];
+    }else{
+      switch (industry) {
+        case "소프트웨어":
+          message = [
+            {
+              "role": "system",
+              "content": "안녕하세요. 여기서는 일반적으로 표현된 문장을 소프트웨어 직군에서 사용하는 전문 용어와 개념을 활용하여 재표현합니다. 사용자가 제공한 일반 문장을 소프트웨어 개발 관련 용어로 변환하여, 동일한 의미를 갖되, 소프트웨어 직군의 전문적인 언어로 표현된 문장을 제공합니다. 변환을 원하는 문장을 입력해주세요."
+            },
+            {
+              "role": "user",
+              "content": `${content}`
+            },
+            {
+              "role": "system",
+              "content": "여기에는 사용자가 입력한 일반 문장을 받아, 해당 문장을 소프트웨어 개발 직군에서 사용하는 전문 용어로 재구성한 문장을 출력합니다. 예시: 사용자가 '새 프로젝트의 가능성을 검증하고 있어서 지금 당장은 부탁을 들어줄 수 없어요'라고 입력했을 때, 시스템은 '현재 새 애플리케이션의 프로토타입을 PoC(Proof of Concept) 단계에서 검증 중이므로, 즉각적인 요청에 응답하기 어렵습니다'라고 응답합니다."
+            }
+          ];
+          break;
+        case "반도체":
+          message = [
+            {
+              "role": "system",
+              "content": "안녕하세요. 이 서비스는 일반적인 문장을 반도체 직군의 전문가들이 사용하는 언어로 변환해 드립니다. 반도체 분야의 전문 용어와 개념을 사용하여 같은 의미의 문장을 재구성하므로, 해당 분야의 전문 지식이 필요한 문장 변환을 원하시면 문장을 입력해주세요."
+            },
+            {
+              "role": "user",
+              "content": `${content}`
+            },
+            {
+              "role": "system",
+              "content": "여기에는 사용자가 입력한 일반적인 문장을 받아, 반도체 분야의 전문 용어를 사용해 같은 의미를 전달하되 전문가들이 이해할 수 있는 방식으로 변환한 문장을 출력합니다. 예시: 사용자가 '이 기기의 성능이 매우 뛰어나다고 들었습니다'라고 입력했을 때, 시스템은 '이 장치의 처리량과 효율성이 업계 표준을 상회하는 것으로 평가됩니다'라고 응답합니다."
+            }
+          ];
+          break;
+        case "기계":
+          message = [
+            {
+              "role": "system",
+              "content": "안녕하세요. 이 서비스는 주어진 문장을 기계공학 분야의 전문가들이 사용하는 언어로 변환해드립니다. 일반적인 표현을 기계공학적 용어로 재구성하여, 해당 분야의 전문가들이 이해하기 쉽도록 돕습니다. 변환을 원하는 문장을 입력해주세요."
+            },
+            {
+              "role": "user",
+              "content": `${content}`
+            },
+            {
+              "role": "system",
+              "content": "여기에는 사용자가 입력한 일반적인 문장을 받아, 그 문장을 기계공학 분야의 전문 용어를 사용하여 변환한 문장을 출력합니다. 예를 들어, 사용자가 '자동차가 고장 났어요'라고 입력했을 때, 시스템은 '자동차의 구동 시스템에 기술적 결함이 발생했습니다'라고 응답할 수 있습니다."
+            }
+          ];
+          break;
+        case "전자":
+          message = [
+            {
+              "role": "system",
+              "content": "안녕하세요. 이 서비스는 일반적인 문장을 전자공학 직군의 전문가들이 사용하는 언어로 변환해드립니다. 전자공학 관련 용어와 개념을 활용해 문장을 재구성하여, 해당 분야의 전문가들도 쉽게 이해할 수 있도록 도와드립니다. 전자공학 분야에 맞게 변환하고 싶은 문장을 입력해주세요."
+            },
+            {
+              "role": "user",
+              "content": `${content}`
+            },
+            {
+              "role": "system",
+              "content": "여기에는 사용자가 입력한 일반적인 문장을 전자공학 분야의 전문 용어를 사용하여 재구성한 문장을 출력합니다. 예시: 사용자가 '스마트폰이 갑자기 꺼졌어요'라고 입력했을 때, 시스템은 '스마트폰의 전원 공급 시스템에 불안정성이 발생하여 자동 종료되었을 수 있습니다'라고 응답합니다."
+            }
+          ];
+          break;
+        case "비즈니스":
+          message = [
+            {
+              "role": "system",
+              "content": "안녕하세요. 이 서비스는 일반적인 문장을 비즈니스, 경제, 경영 직군의 전문 용어를 사용하여 변환합니다. 사용자가 제공한 문장을 해당 직군의 언어로 재구성하여, 전문가 수준의 커뮤니케이션이 가능하도록 돕습니다. 변환을 원하는 문장을 입력해주세요."
+            },
+            {
+              "role": "user",
+              "content": `${content}`
+            },
+            {
+              "role": "system",
+              "content": "여기에는 사용자가 제공한 일반적인 문장을 비즈니스, 경제, 경영 직군의 전문 용어를 사용하여 재구성한 문장을 출력합니다. 예를 들어, 사용자가 '우리 회사는 올해 매출이 증가했어요'라고 입력했을 때, 시스템은 '본 기업의 본기간 총수익은 전년 대비 상승세를 기록하였습니다'라고 응답할 수 있습니다."
+            }
+          ];
+          break;
+        default:
+          message = [
+            {
+              "role": "system",
+              "content": "안녕하세요. 여기서는 특정 직군의 전문적인 단어로 구성된 문장을 입력받으면, 그 문장 내의 어려운 단어들을 더 일반적이고 알아보기 쉬운 단어로 변환하여 제공합니다. 직접적인 설명 없이 단어 변환만을 수행합니다. 변환을 원하는 문장을 입력해주세요."
+            },
+            {
+              "role": "user",
+              "content": `${content}`
+            },
+            {
+              "role": "system",
+              "content": "여기에는 사용자가 입력한 전문적인 문장을 받아, 그 안의 전문 용어를 일반적인 용어로 변환한 문장을 출력합니다. 예시: 사용자가 '저희가 현재 PoC 중이라 부탁 못들어줘요'라고 입력했을 때, 시스템은 '저희가 현재 새 프로젝트가 실현 가능성이 있는지 검증하는 중이라 부탁 못들어줘요'라고 응답합니다."
+            }
+          ];
+      }
+    }
+
+    return message;
+  }
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -376,9 +513,14 @@ function FlowChat() { // flowchat button
               ))}
             </div>
             <form className="window-input" onSubmit={handleSendMessage}>
-              <div> {/* 산업 선택 */}
+              <div> 
+                <select value={isWord} onChange={handleIsWordChange} className='word-select'>
+                  <option value="단어">용어 설명</option>
+                  <option value="문장">문장 변환</option>
+                </select>
+                {/* 산업 선택 */}
                 <select value={industryValue} onChange={handleIndustryChange} className='industry-select'>
-                  <option value="">산업군을 선택해주세요.</option>
+                  <option value="">산업군</option>
                   <option value="소프트웨어">소프트웨어</option>
                   <option value="반도체">반도체</option>
                   <option value="기계">기계</option>
@@ -417,8 +559,7 @@ function FlowChat() { // flowchat button
 function Meeting() {
   const [isChat, setIsChat] = useState(false);
   const [messages, setMessages] = useState([]);
-  const [fileText, setFileText] = useState('');
-  const { files, setFiles } = useContext(FileContext);
+  const { files, setFiles, filesContent, setFilesContent } = useContext(FileContext);
 
   const handleChange = () => {
     setIsChat(!isChat);
@@ -427,6 +568,11 @@ function Meeting() {
   // 파일 목록 제거 (FileUpload)
   const handleRemoveFile = (fileList) => {
     setFiles(fileList);
+  }
+
+  // 파일 내용 목록 제거 (FileUpload)
+  const handleRemoveFileContent = (fileList) => {
+    setFilesContent(fileList);
   }
 
   // 메세지 입력 (InputText)
@@ -441,7 +587,7 @@ function Meeting() {
     setIsChat(true);
   };
 
-  // 파일 업로드
+  // 파일 업로드 (FileUpload, InputText)
   const handleUpload = (file) => {
     if (file) {
       const fileReader = new FileReader();
@@ -450,90 +596,64 @@ function Meeting() {
         const arrayBuffer = this.result;
         const pdf = await getDocument(arrayBuffer).promise;
 
+        const textPromises = [];
+
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
           const text = textContent.items.map(item => item.str).join(' ');
 
           console.log('페이지', i, '텍스트:', text);
-          setFileText((prevText) => [...prevText, text]);
+          textPromises.push(text);
         }
 
-        const messages = [                        // 프롬프트
+        const texts = await Promise.all(textPromises);
+
+        await processMessages(texts);
+      };
+
+      async function processMessages(texts) {
+        const messages = [         // 회의록 요약 프롬프트
           {
-            role: "user", content: `Given the following text of meeting minutes, please provide a concise summary that includes the main agenda items discussed, key decisions made, action items assigned, and any significant contributions from participants. Ensure the summary captures the essence of the meeting and is clear and straightforward for stakeholders who were not present at the meeting to understand.
-
-          ${fileText}
-
-          Ensure your summary includes:
-          1. The date and purpose of the meeting.
-          2. A list of the main agenda items discussed.
-          3. Key decisions made during the meeting.
-          4. Action items and the individuals responsible for each.
-          5. Significant contributions or remarks from participants, if any.
-          6. Any follow-up meetings or deadlines mentioned.
-
-          Please present the summary in a structured format for easy reading and comprehension.` },
+            "role": "system",
+            "content": "안녕하세요. 이 서비스는 제공된 회의록 텍스트를 분석하여, 회의의 제목, 중요한 사항들, 그리고 액션 아이템을 요약하여 제공합니다. 이를 통해 회의의 핵심 내용과 후속 조치 사항을 빠르게 파악할 수 있도록 돕습니다. 요약을 원하는 회의록 텍스트를 입력해주세요."
+          },
+          {
+            "role": "user",
+            "content": `${texts}`
+          },
+          {
+            "role": "system",
+            "content": "여기에는 사용자가 제공한 회의록 텍스트를 분석한 후, 회의의 제목, 중요한 사항들, 그리고 액션 아이템을 포함한 요약본을 출력합니다. 예를 들어, 회의록에 '2024년 제1분기 영업 전략 회의'라는 제목과 '신제품 출시 일정', '마케팅 전략 논의', '영업 목표 설정' 등의 중요 사항, 그리고 '신제품 출시 준비를 위한 프로젝트 팀 구성', '마케팅 팀에 의한 상세 전략 계획 제출' 등의 액션 아이템이 포함되어 있을 때, 이를 요약하여 제공할 수 있습니다."
+          }
         ];
 
+        const textPromises = [];
         console.log("== Post GPT API ==");
+        console.log('보낸 메세지 : ',texts);
 
         try {
           const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
           const result = await client.getChatCompletions(deploymentId, messages);
 
-          for (const choice of result.choices)
-            console.log(choice.message);
+          for (const choice of result.choices){
+            console.log('받은 메세지 : ' ,choice.message);
+            textPromises.push(choice.message);
+          }
+
+          const texts = await Promise.all(textPromises);
+
+          setFiles(prevFiles => [...prevFiles, file]);
+          setFilesContent((prevFilesContent) => [...prevFilesContent, texts]);
+          console.log(texts);
         } catch (error) {
           console.error('Failed to call API', error);
         }
       };
 
       fileReader.readAsArrayBuffer(file);
-      setFiles(prevFiles => [...prevFiles, file]);
     }
   };
-
-  // 파일 업로드 (FileUpload)
-  // const handleUpload = (file) => {
-  //   const reader = new FileReader();
-
-  //   reader.onload = async (e) => {
-  //     const fileContent = e.target.result;
-
-  //     const messages = [                        // 프롬프트
-  //       {
-  //         role: "user", content: `Given the following text of meeting minutes, please provide a concise summary that includes the main agenda items discussed, key decisions made, action items assigned, and any significant contributions from participants. Ensure the summary captures the essence of the meeting and is clear and straightforward for stakeholders who were not present at the meeting to understand.
-
-  //         ${fileContent}
-
-  //         Ensure your summary includes:
-  //         1. The date and purpose of the meeting.
-  //         2. A list of the main agenda items discussed.
-  //         3. Key decisions made during the meeting.
-  //         4. Action items and the individuals responsible for each.
-  //         5. Significant contributions or remarks from participants, if any.
-  //         6. Any follow-up meetings or deadlines mentioned.
-
-  //         Please present the summary in a structured format for easy reading and comprehension.` },
-  //     ];
-
-  //     console.log("== Post GPT API ==");
-
-  //     try {
-  //       const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
-  //       const result = await client.getChatCompletions(deploymentId, messages);
-
-  //       for (const choice of result.choices)
-  //         console.log(choice.message);
-  //     } catch (error) {
-  //       console.error('Failed to call API', error);
-  //     }
-  //   };
-  //   reader.readAsText(file);
-
-  //   setFiles(prevFiles => [...prevFiles, file]);
-  // };
 
   return (
     <div className="Meeting">
@@ -544,11 +664,11 @@ function Meeting() {
         ) : (
           <>
             <Header />
-            <FileUpload files={files} onUploadFile={handleUpload} onRemoveFile={handleRemoveFile} />
+            <FileUpload files={files} filesContent={filesContent} onUploadFile={handleUpload} onRemoveFile={handleRemoveFile} onRemoveFileContent={handleRemoveFileContent}/>
           </>
         )}
       </div>
-      <InputText onButtonClick={handleChange} onSendMessage={handleSendMessage} onUploadFile={handleUpload} />
+      <InputText files={filesContent} onButtonClick={handleChange} onSendMessage={handleSendMessage} onUploadFile={handleUpload}/>
     </div>
   );
 }
