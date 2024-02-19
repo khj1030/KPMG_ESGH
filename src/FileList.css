@@ -1,0 +1,41 @@
+.showFileList {
+    text-align: center;
+    background-color: #282c34;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(10px + 2vmin);
+    color: white;
+}
+.Navbar {
+    background-color: #282c34;
+}
+
+/* 상단 부분 */
+.Header {
+    margin: 100px 0 0;
+    height: 20vh;
+}
+.header_msg {
+    font-size: 20px;
+}
+.Robot {
+    height: 10vh;
+    pointer-events: none;
+}
+
+/* 파일 리스트 출력 부분 */
+.fileList-container {
+    width: 80vh;
+    height: 44vh;
+    margin: 20px 0;
+    background-color: #494A53;
+    border-radius: 20px;
+    padding: 0px 40px 10px;
+    font-weight: bold;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+  }
