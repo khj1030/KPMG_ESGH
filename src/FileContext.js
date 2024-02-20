@@ -7,7 +7,7 @@ export const FileProvider = ({ children }) => {
   const [filesContent, setFilesContent] = useState([]);
 
   return (
-    <FileContext.Provider value={{ files, setFiles }}>
+    <FileContext.Provider value={{ files, setFiles, filesContent, setFilesContent }}>
       {children}
     </FileContext.Provider>
   );
